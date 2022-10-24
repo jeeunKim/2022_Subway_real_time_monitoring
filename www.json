@@ -1,0 +1,234 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+ var app = require('../app');
+ var debug = require('debug')('iotserver:server');
+ var http = require('http');
+ 
+ /**
+  * Get port from environment and store in Express.
+  */
+ 
+ var port = normalizePort(process.env.PORT || '3000');
+ app.set('port', port);
+ 
+ /**
+  * Create HTTP server.
+  */
+ 
+ var server = http.createServer(app);
+ 
+ // Connect Mongo DB 
+ var mongoDB = require("mongodb").MongoClient;
+ var url = "mongodb://127.0.0.1:27017/IoTDB";
+ var dbObj = null;
+ mongoDB.connect(url, function(err, db){
+   dbObj = db;
+   console.log("DB connect");
+ });
+ 
+ /**
+  * MQTT subscriber (MQTT Server connection & Read resource data)
+  */
+ var mqtt = require("mqtt");
+const { stringify } = require('querystring');
+ var client = mqtt.connect("mqtt://127.0.0.1")
+ 
+ // 접속에 성공하면, 3가지 토픽을 구독.
+ client.on("connect", function(){
+   client.subscribe("statnNm");
+   console.log("Subscribing statnNm");
+   client.subscribe("recptnDt");
+   console.log("Subscribing recptnDt");
+   client.subscribe("updnLine");
+   console.log("Subscribing updnLine");
+   client.subscribe("statnTnm");
+   console.log("Subscribing statnTnm");
+   client.subscribe("trainSttus");
+   console.log("Subscribing trainSttus");
+   client.subscribe("lstcarAt");
+   console.log("Subscribing lstcarAt");
+ })
+
+// MQTT 응답 메세지 수신시 동작
+client.on("message", function(topic, message){
+  console.log(topic+ ": " + message.toString()); // 수신한 메세지 Topic 출력
+  var obj = JSON.parse(message); // 수신한 메세지의 데이터를 obj 저장
+  obj.create_at = new Date(); // 현재 날짜 데이터를 obj에 추가함.
+  console.log(obj);
+   // send the received data to MongoDB
+   // 수신한 메세지를 Mongo DB에 저장
+  if (topic == "statnNm"){ 
+    var cursor = dbObj.db("Resources").collection("StationName");
+    cursor.insertOne(obj, function(err, result){
+      if(err){console.log(err);}
+      else{console.log(JSON.stringify(result));}
+    });
+  }	
+  else if (topic == "recptnDt"){ 
+    var cursor = dbObj.db("Resources").collection("RecptnDt");
+    cursor.insertOne(obj, function(err, result){
+      if(err){console.log(err);}
+      else{console.log(JSON.stringify(result));}
+    });
+  }
+  else if (topic == "updnLine"){ 
+    var cursor = dbObj.db("Resources").collection("UpDownLine");
+    cursor.insertOne(obj, function(err, result){
+      if(err){console.log(err);}
+      else{console.log(JSON.stringify(result));}
+    });
+  }
+  else if (topic == "statnTnm"){ 
+    var cursor = dbObj.db("Resources").collection("TerminusName");
+    cursor.insertOne(obj, function(err, result){
+      if(err){console.log(err);}
+      else{console.log(JSON.stringify(result));}
+    });
+  }
+  else if (topic == "trainSttus"){ 
+    var cursor = dbObj.db("Resources").collection("TrainStatus");
+    cursor.insertOne(obj, function(err, result){
+      if(err){console.log(err);}
+      else{console.log(JSON.stringify(result));}
+    });
+  }
+  else if (topic == "lstcarAt"){ 
+    var cursor = dbObj.db("Resources").collection("LstcarAt");
+    cursor.insertOne(obj, function(err, result){
+      if(err){console.log(err);}
+      else{console.log(JSON.stringify(result));}
+    });
+  }
+});
+  
+ // get data from MongDB and then send it to HTML page using socket
+ // Mongo DB에서 최근 데이터 불러와서, HTML 페이지에 업데이트
+var io = require("socket.io")(server);
+io.on("connection", function(socket){
+  socket.on("socket_evt_update", function(data){
+    //지하철역명 데이터
+    var cursor = dbObj.db("Resources").collection("StationName");
+    var options = {sort:{"_id":-1}, projection: {_id:0, statnNm:1, creat_at:1},};
+    var sending_data =cursor.find({},options).limit(1);
+    sending_data.toArray(function(err,results){
+      if(!err){
+        socket.emit("socket_up_statnNm", JSON.stringify(results[0]));
+      }
+    });
+    //최근 수신 시간 데이터
+    var cursor = dbObj.db("Resources").collection("RecptnDt");
+    var options = {sort:{"_id":-1}, projection: {_id:0, recptnDt:1, creat_at:1},};
+    var sending_data =cursor.find({},options).limit(1);
+    sending_data.toArray(function(err,results){
+      if(!err){
+        socket.emit("socket_up_recptnDt", JSON.stringify(results[0]));
+      }
+    });
+    //상하행구분 데이터
+    var cursor = dbObj.db("Resources").collection("UpDownLine");
+    var options = {sort:{"_id":-1}, projection: {_id:0, updnLine:1, creat_at:1},};
+    var sending_data =cursor.find({},options).limit(1);
+    sending_data.toArray(function(err,results){
+      if(!err){
+        socket.emit("socket_up_updnLine", JSON.stringify(results[0]));
+      }
+    });
+    //종착역명 데이터
+    var cursor = dbObj.db("Resources").collection("TerminusName");
+    var options = {sort:{"_id":-1}, projection: {_id:0, statnTnm:1, creat_at:1},};
+    var sending_data =cursor.find({},options).limit(1);
+    sending_data.toArray(function(err,results){
+      if(!err){
+        socket.emit("socket_up_statnTnm", JSON.stringify(results[0]));
+      }
+    });
+    // 열차 상태 데이터
+    var cursor = dbObj.db("Resources").collection("TrainStatus");
+    var options = {sort:{"_id":-1}, projection: {_id:0, trainSttus:1, creat_at:1},};
+    var sending_data =cursor.find({},options).limit(1);
+    sending_data.toArray(function(err,results){
+      if(!err){
+        socket.emit("socket_up_trainSttus", JSON.stringify(results[0]));
+      }
+    }); 
+    // 막차여부 데이터
+    var cursor = dbObj.db("Resources").collection("LstcarAt");
+    var options = {sort:{"_id":-1}, projection: {_id:0, lstcarAt:1, creat_at:1},};
+    var sending_data =cursor.find({},options).limit(1);
+    sending_data.toArray(function(err,results){
+      if(!err){
+        socket.emit("socket_up_lstcarAt", JSON.stringify(results[0]));
+      }
+    }); 
+  });
+
+});
+ 
+ 
+ /**
+  * Listen on provided port, on all network interfaces.
+  */
+ server.listen(port);
+ server.on('error', onError);
+ server.on('listening', onListening);
+ 
+ /**
+  * Normalize a port into a number, string, or false.
+  */
+ function normalizePort(val) {
+   var port = parseInt(val, 10);
+   if (isNaN(port)) {
+     // named pipe
+     return val;
+   }
+   if (port >= 0) {
+     // port number
+     return port;
+   }
+   return false;
+ }
+ 
+ /**
+  * Event listener for HTTP server "error" event.
+  */
+ 
+ function onError(error) {
+   if (error.syscall !== 'listen') {
+     throw error;
+   }
+ 
+   var bind = typeof port === 'string'
+     ? 'Pipe ' + port
+     : 'Port ' + port;
+ 
+   // handle specific listen errors with friendly messages
+   switch (error.code) {
+     case 'EACCES':
+       console.error(bind + ' requires elevated privileges');
+       process.exit(1);
+       break;
+     case 'EADDRINUSE':
+       console.error(bind + ' is already in use');
+       process.exit(1);
+       break;
+     default:
+       throw error;
+   }
+ }
+ 
+ /**
+  * Event listener for HTTP server "listening" event.
+  */
+ 
+ function onListening() {
+   var addr = server.address();
+   var bind = typeof addr === 'string'
+     ? 'pipe ' + addr
+     : 'port ' + addr.port;
+   debug('Listening on ' + bind);
+ }
+ 

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ko">
+<meta charset="UTF-8">
+<title>MQTT Monitoring Service</title>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+<script>
+    var socket = io.connect();
+    var timer = null;
+    $(document).ready(function(){
+        socket.on("evt_temp_s2c", function(data){
+            data = JSON.parse(data);
+            $(".mqttlist").html('<li>'+data.tmp+'C'+'</li>');
+        });
+        if(timer == null){
+            timer = window.setInterval("timer1()",1000); //1초
+        }
+    });
+    function timer1(){
+        socket.emit("evt_temp_c2s", JSON.stringify({}));
+    }
+</script>
+</head>
+<body>
+MQTT 온도 모니터링
+    <div id = "msg">
+        <div id = "mqtt_logs">
+            <ul class="mqttlist"></ul>
+        </div>
+    </div>
+</body>
+</html>
